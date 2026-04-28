@@ -64,6 +64,12 @@ public class Raytracer {
         // Adds spheres to the scene
         scene.addObject(new Sphere(new Vector3D(-1.5, 0, -5), 1, Color.RED));
         scene.addObject(new Sphere(new Vector3D(1.5, 0, -9), 1, Color.BLUE));
+        scene.addObject(new Triangle(
+            new Vector3D(-1.2, -1.1, -4),
+            new Vector3D(1.2, -1.1, -4),
+            new Vector3D(0, 1.1, -4),
+            Color.GREEN
+        ));
 
         // Creates the raytracer
         Raytracer raytracer = new Raytracer();
