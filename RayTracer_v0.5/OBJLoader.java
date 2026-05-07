@@ -19,6 +19,7 @@ public class OBJLoader {
         Vector3D translation
     ) throws IOException {
         List<Vector3D> vertices = new ArrayList<>();
+        List<Vector3D> normals = new ArrayList<>();
         List<Triangle> triangles = new ArrayList<>();
 
         // Opens the OBJ file and closes it automatically when loading finishes.
@@ -38,11 +39,13 @@ public class OBJLoader {
 
                 String[] parts = line.split("\\s+");
 
-                // Vertex lines define positions. Face lines define polygon indices.
+                // Vertex lines define positions. Normal lines define smooth surface directions.
                 if (parts[0].equals("v")) {
                     vertices.add(parseVertex(parts, lineNumber, scale, translation));
+                } else if (parts[0].equals("vn")) {
+                    normals.add(parseNormal(parts, lineNumber));
                 } else if (parts[0].equals("f")) {
-                    addFaceTriangles(parts, vertices, triangles, color, lineNumber);
+                    addFaceTriangles(parts, vertices, normals, triangles, color, lineNumber);
                 }
             }
         }
@@ -73,10 +76,28 @@ public class OBJLoader {
         }
     }
 
+    // Parses a vertex normal line with the form: vn x y z.
+    private static Vector3D parseNormal(String[] parts, int lineNumber) throws IOException {
+        if (parts.length < 4) {
+            throw new IOException("Invalid normal at line " + lineNumber);
+        }
+
+        try {
+            double x = Double.parseDouble(parts[1]);
+            double y = Double.parseDouble(parts[2]);
+            double z = Double.parseDouble(parts[3]);
+
+            return new Vector3D(x, y, z).normalize();
+        } catch (NumberFormatException e) {
+            throw new IOException("Invalid normal number at line " + lineNumber, e);
+        }
+    }
+
     // Converts one OBJ face into triangles using fan triangulation.
     private static void addFaceTriangles(
         String[] parts,
         List<Vector3D> vertices,
+        List<Vector3D> normals,
         List<Triangle> triangles,
         Color color,
         int lineNumber
@@ -86,11 +107,15 @@ public class OBJLoader {
         }
 
         List<Vector3D> faceVertices = new ArrayList<>();
+        List<Vector3D> faceNormals = new ArrayList<>();
 
-        // Resolves every OBJ face index into a real vertex position.
+        // Resolves every OBJ face index into a vertex position and optional normal.
         for (int i = 1; i < parts.length; i++) {
             int vertexIndex = parseVertexIndex(parts[i], vertices.size(), lineNumber);
             faceVertices.add(vertices.get(vertexIndex));
+
+            int normalIndex = parseNormalIndex(parts[i], normals.size(), lineNumber);
+            faceNormals.add(normalIndex >= 0 ? normals.get(normalIndex) : null);
         }
 
         // A face with N vertices becomes N - 2 triangles.
@@ -99,7 +124,10 @@ public class OBJLoader {
                 faceVertices.get(0),
                 faceVertices.get(i),
                 faceVertices.get(i + 1),
-                color
+                color,
+                faceNormals.get(0),
+                faceNormals.get(i),
+                faceNormals.get(i + 1)
             ));
         }
     }
@@ -107,7 +135,7 @@ public class OBJLoader {
     // Parses the vertex index from OBJ face tokens like v, v/vt or v/vt/vn.
     private static int parseVertexIndex(String token, int vertexCount, int lineNumber) throws IOException {
         // Only the vertex position index is needed for this raytracer.
-        String[] tokenParts = token.split("/");
+        String[] tokenParts = token.split("/", -1);
 
         if (tokenParts.length == 0 || tokenParts[0].isEmpty()) {
             throw new IOException("Invalid face index at line " + lineNumber);
@@ -133,6 +161,37 @@ public class OBJLoader {
             return zeroBasedIndex;
         } catch (NumberFormatException e) {
             throw new IOException("Invalid face index number at line " + lineNumber, e);
+        }
+    }
+
+    // Parses the normal index from OBJ face tokens like v//vn or v/vt/vn.
+    private static int parseNormalIndex(String token, int normalCount, int lineNumber) throws IOException {
+        String[] tokenParts = token.split("/", -1);
+
+        if (tokenParts.length < 3 || tokenParts[2].isEmpty()) {
+            return -1;
+        }
+
+        try {
+            int objIndex = Integer.parseInt(tokenParts[2]);
+            int zeroBasedIndex;
+
+            // Positive OBJ indices are 1-based. Negative indices are relative to the current normal list.
+            if (objIndex > 0) {
+                zeroBasedIndex = objIndex - 1;
+            } else if (objIndex < 0) {
+                zeroBasedIndex = normalCount + objIndex;
+            } else {
+                throw new IOException("OBJ normal indices start at 1 at line " + lineNumber);
+            }
+
+            if (zeroBasedIndex < 0 || zeroBasedIndex >= normalCount) {
+                throw new IOException("Normal index out of range at line " + lineNumber);
+            }
+
+            return zeroBasedIndex;
+        } catch (NumberFormatException e) {
+            throw new IOException("Invalid normal index number at line " + lineNumber, e);
         }
     }
 }

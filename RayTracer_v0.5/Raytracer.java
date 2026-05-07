@@ -123,7 +123,7 @@ public class Raytracer {
     // Builds a sample scene and renders it.
     public static void main(String[] args) {
         // Creates the camera that shoots rays through its frustum.
-        Camera camera = new Camera(new Vector3D(0, 0, 0), 800, 600, 60);
+        Camera camera = new Camera(new Vector3D(0, 0.3, 2), 800, 600, 60);
 
         // Creates the scene container for all renderable objects.
         Scene scene = new Scene();
@@ -143,14 +143,14 @@ public class Raytracer {
         //     Color.GREEN
         // ));
 
-        // Loads the OBJ tree, triangulates each face, and adds the triangles to the scene.
+        // Loads the OBJ model, triangulates each face, and adds the triangles to the scene.
         try {
-            // Loads the tree model with a scale and translation that fit the camera.
+            // Loads the teapot model with normals used for smooth Phong interpolation.
             List<Triangle> objTriangles = OBJLoader.load(
-                "Tree low.obj",
+                "teapot.obj",
                 new Color(34, 139, 34),
-                0.035,
-                new Vector3D(0, -2.0, -7.0)
+                1,
+                new Vector3D(0, 0.0, 0.0)
             );
 
             // Adds every generated triangle to the scene.
