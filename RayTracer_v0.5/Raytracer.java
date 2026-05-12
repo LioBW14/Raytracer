@@ -1,7 +1,6 @@
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.util.List;
 import javax.imageio.ImageIO;
 
 public class Raytracer {
@@ -60,8 +59,8 @@ public class Raytracer {
         // Reads the material color from the hit object.
         Color baseColor = intersection.getColor();
 
-        // Reads the surface normal used by the lighting model.
-        Vector3D normal = intersection.getObject().getNormal(intersection.getPosition()).normalize();
+        // Reads the surface normal stored in the intersection.
+        Vector3D normal = intersection.getNormal().normalize();
 
         // Points from the surface hit point back toward the camera.
         Vector3D viewDirection = camera.getPosition().subtract(intersection.getPosition()).normalize();
@@ -146,17 +145,15 @@ public class Raytracer {
         // Loads the OBJ model, triangulates each face, and adds the triangles to the scene.
         try {
             // Loads the teapot model with normals used for smooth Phong interpolation.
-            List<Triangle> objTriangles = OBJLoader.load(
+            Model3D teapot = OBJLoader.loadModel(
                 "teapot.obj",
                 new Color(34, 139, 34),
                 1,
                 new Vector3D(0, 0.0, 0.0)
             );
 
-            // Adds every generated triangle to the scene.
-            for (Triangle triangle : objTriangles) {
-                scene.addObject(triangle);
-            }
+            // Adds the whole mesh as one scene object.
+            scene.addObject(teapot);
         } catch (Exception e) {
             System.out.println("Error loading OBJ model: " + e.getMessage());
         }

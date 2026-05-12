@@ -93,9 +93,18 @@ public class Triangle extends Object3D {
         double[] weights = Barycentric.calculate(point, this);
 
         // Interpolates vertex normals for Phong interpolation.
-        return normalA.multiply(weights[0])
-            .add(normalB.multiply(weights[1]))
-            .add(normalC.multiply(weights[2]))
+        return interpolateNormal(weights[0], weights[1], weights[2]);
+    }
+
+    // Interpolates vertex normals from barycentric weights.
+    private Vector3D interpolateNormal(double weightA, double weightB, double weightC) {
+        if (normalA == null || normalB == null || normalC == null) {
+            return faceNormal;
+        }
+
+        return normalA.multiply(weightA)
+            .add(normalB.multiply(weightB))
+            .add(normalC.multiply(weightC))
             .normalize();
     }
 
@@ -144,8 +153,12 @@ public class Triangle extends Object3D {
             return null;
         }
 
-        // Returns the valid triangle hit with its interpolated normal.
+        // Uses the barycentric values already computed by the intersection test.
         Vector3D hitPoint = ray.getPoint(t);
-        return new Intersection(t, hitPoint, this, getNormal(hitPoint));
+        double weightA = 1.0 - u - v;
+        Vector3D hitNormal = interpolateNormal(weightA, u, v);
+
+        // Returns the valid triangle hit with its interpolated normal.
+        return new Intersection(t, hitPoint, this, hitNormal);
     }
 }

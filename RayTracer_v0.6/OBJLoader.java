@@ -10,7 +10,7 @@ public class OBJLoader {
 
     // Loads an OBJ file and converts every face into one or more triangles.
     public static List<Triangle> load(String fileName, Color color) throws IOException {
-        return load(fileName, color, 1.0, new Vector3D(0, 0, 0));
+        return loadRaw(fileName, color);
     }
 
     // Loads an OBJ file and wraps its triangles inside a model.
@@ -25,20 +25,49 @@ public class OBJLoader {
         double scale,
         Vector3D translation
     ) throws IOException {
-        return new Model3D(load(fileName, color, scale, translation), color);
+        return loadModel(fileName, color, scale, translation, 0.0);
     }
 
-    // Loads an OBJ file and applies a simple scale and translation to each vertex.
+    // Loads an OBJ file as a reflective model with scale and translation.
+    public static Model3D loadModel(
+        String fileName,
+        Color color,
+        double scale,
+        Vector3D translation,
+        double reflectivity
+    ) throws IOException {
+        return loadModel(fileName, color, scale, translation, 0.0, reflectivity);
+    }
+
+    // Loads an OBJ file as a reflective model with full model transform.
+    public static Model3D loadModel(
+        String fileName,
+        Color color,
+        double scale,
+        Vector3D translation,
+        double rotationY,
+        double reflectivity
+    ) throws IOException {
+        return new Model3D(loadRaw(fileName, color), color, translation, scale, rotationY, reflectivity);
+    }
+
+    // Loads an OBJ file and returns transformed triangles for compatibility.
     public static List<Triangle> load(
         String fileName,
         Color color,
         double scale,
         Vector3D translation
     ) throws IOException {
+        return new Model3D(loadRaw(fileName, color), color, translation, scale, 0.0, 0.0).getTriangles();
+    }
+
+    // Loads raw OBJ geometry without applying scene transforms.
+    private static List<Triangle> loadRaw(String fileName, Color color) throws IOException {
         List<Vector3D> vertices = new ArrayList<>();
         List<Vector3D> normals = new ArrayList<>();
         List<Triangle> triangles = new ArrayList<>();
         List<Integer> smoothingGroups = new ArrayList<>();
+        List<Boolean> explicitNormalFlags = new ArrayList<>();
         int currentSmoothingGroup = SMOOTHING_OFF;
 
         // Opens the OBJ file and closes it automatically when loading finishes.
@@ -60,7 +89,7 @@ public class OBJLoader {
 
                 // Vertex lines define positions. Normal lines define smooth surface directions.
                 if (parts[0].equals("v")) {
-                    vertices.add(parseVertex(parts, lineNumber, scale, translation));
+                    vertices.add(parseVertex(parts, lineNumber));
                 } else if (parts[0].equals("vn")) {
                     normals.add(parseNormal(parts, lineNumber));
                 } else if (parts[0].equals("f")) {
@@ -70,6 +99,7 @@ public class OBJLoader {
                         normals,
                         triangles,
                         smoothingGroups,
+                        explicitNormalFlags,
                         color,
                         currentSmoothingGroup,
                         lineNumber
@@ -81,7 +111,7 @@ public class OBJLoader {
         }
 
         // Applies smoothing groups after all faces have been loaded.
-        applySmoothingGroups(triangles, smoothingGroups);
+        applySmoothingGroups(triangles, smoothingGroups, explicitNormalFlags);
 
         return triangles;
     }
@@ -89,9 +119,7 @@ public class OBJLoader {
     // Parses a vertex line with the form: v x y z.
     private static Vector3D parseVertex(
         String[] parts,
-        int lineNumber,
-        double scale,
-        Vector3D translation
+        int lineNumber
     ) throws IOException {
         if (parts.length < 4) {
             throw new IOException("Invalid vertex at line " + lineNumber);
@@ -102,8 +130,7 @@ public class OBJLoader {
             double y = Double.parseDouble(parts[2]);
             double z = Double.parseDouble(parts[3]);
 
-            // Scale first, then translate so large OBJ files fit the camera view.
-            return new Vector3D(x, y, z).multiply(scale).add(translation);
+            return new Vector3D(x, y, z);
         } catch (NumberFormatException e) {
             throw new IOException("Invalid vertex number at line " + lineNumber, e);
         }
@@ -133,6 +160,7 @@ public class OBJLoader {
         List<Vector3D> normals,
         List<Triangle> triangles,
         List<Integer> smoothingGroups,
+        List<Boolean> explicitNormalFlags,
         Color color,
         int smoothingGroup,
         int lineNumber
@@ -155,6 +183,10 @@ public class OBJLoader {
 
         // A face with N vertices becomes N - 2 triangles.
         for (int i = 1; i < faceVertices.size() - 1; i++) {
+            boolean hasExplicitNormals = faceNormals.get(0) != null
+                && faceNormals.get(i) != null
+                && faceNormals.get(i + 1) != null;
+
             triangles.add(new Triangle(
                 faceVertices.get(0),
                 faceVertices.get(i),
@@ -165,6 +197,7 @@ public class OBJLoader {
                 faceNormals.get(i + 1)
             ));
             smoothingGroups.add(smoothingGroup);
+            explicitNormalFlags.add(hasExplicitNormals);
         }
     }
 
@@ -182,17 +215,23 @@ public class OBJLoader {
     }
 
     // Applies smoothing by averaging normals for shared vertices inside each group.
-    private static void applySmoothingGroups(List<Triangle> triangles, List<Integer> smoothingGroups) {
+    private static void applySmoothingGroups(
+        List<Triangle> triangles,
+        List<Integer> smoothingGroups,
+        List<Boolean> explicitNormalFlags
+    ) {
         List<Integer> processedGroups = new ArrayList<>();
 
         for (int i = 0; i < triangles.size(); i++) {
             int smoothingGroup = smoothingGroups.get(i);
 
-            if (smoothingGroup == SMOOTHING_OFF || processedGroups.contains(smoothingGroup)) {
+            if (explicitNormalFlags.get(i)
+                || smoothingGroup == SMOOTHING_OFF
+                || processedGroups.contains(smoothingGroup)) {
                 continue;
             }
 
-            smoothGroup(triangles, smoothingGroups, smoothingGroup);
+            smoothGroup(triangles, smoothingGroups, explicitNormalFlags, smoothingGroup);
             processedGroups.add(smoothingGroup);
         }
     }
@@ -201,6 +240,7 @@ public class OBJLoader {
     private static void smoothGroup(
         List<Triangle> triangles,
         List<Integer> smoothingGroups,
+        List<Boolean> explicitNormalFlags,
         int smoothingGroup
     ) {
         List<Triangle> groupTriangles = new ArrayList<>();
@@ -209,7 +249,7 @@ public class OBJLoader {
 
         // Collects all vertex-normal pairs that belong to the same smoothing group.
         for (int i = 0; i < triangles.size(); i++) {
-            if (smoothingGroups.get(i) != smoothingGroup) {
+            if (explicitNormalFlags.get(i) || smoothingGroups.get(i) != smoothingGroup) {
                 continue;
             }
 
